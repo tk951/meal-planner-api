@@ -1,43 +1,62 @@
-import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+const { Configuration, OpenAIApi } = require("openai");
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAIApi(
+  new Configuration({
+    apiKey: process.env.OPENAI_API_KEY, // Use the OpenAI API key stored in environment variables
+  })
+);
 
-export async function POST(req) {
-  try {
-    const body = await req.json();
-    const { adults, children, needs, skill, budget, time } = body;
+// CORS configuration to allow requests from your website
+const allowedOrigins = ["https://your-website.com", "https://www.your-website.com"];
 
-    const prompt = `
-Create a weekly dinner plan (7 days) for a household with:
-- ${adults} adults
-- ${children} children
-- Specific needs: ${needs.join(', ') || 'none'}
-- Cooking skill: ${skill}
-- Budget: ${budget}
-- Time available: ${time}
+module.exports = async (req, res) => {
+  // Set CORS headers
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigins);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-Include meal names and a simple grocery list. Format it clearly in plain text.
-    `;
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-    });
-
-    const aiMessage = response.choices[0].message.content;
-
-    return NextResponse.json({ plan: aiMessage });
-  } catch (error) {
-    console.error('Error generating meal plan:', error);
-    return NextResponse.json({ error: 'Something went wrong.' }, { status: 500 });
+  // Handle OPTIONS method (pre-flight requests for CORS)
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
-}
+
+  // Handle POST method (to process meal plan request)
+  if (req.method === "POST") {
+    try {
+      // Destructure the request body to get the prompt
+      const { adults, children, specificNeeds, cookingSkill, budget, timeAvailable, email } = req.body;
+
+      // Create a prompt based on form data (you can modify the structure to your needs)
+      const prompt = `Generate a weekly meal plan for:
+        Adults: ${adults}
+        Children: ${children}
+        Specific Needs: ${specificNeeds.join(", ")}
+        Cooking Skill: ${cookingSkill}
+        Budget: ${budget}
+        Time Available: ${timeAvailable}`;
+
+      // Call OpenAI API with the generated prompt
+      const response = await openai.createCompletion({
+        model: "text-davinci-003",  // Use the model you're working with
+        prompt: prompt,
+        max_tokens: 1000, // Set the response length, adjust if necessary
+        temperature: 0.7, // Adjust creativity level (higher = more creative)
+      });
+
+      // Send the generated meal plan back to the frontend
+      const mealPlan = response.data.choices[0].text;
+
+      // Optionally, you can integrate email sending logic here using a service like SendGrid or Nodemailer
+
+      // Respond with the meal plan
+      res.status(200).json({ mealPlan, email });
+    } catch (error) {
+      // Handle errors (API issues, etc.)
+      console.error("Error generating meal plan:", error);
+      res.status(500).json({ error: "Failed to generate meal plan. Please try again later." });
+    }
+  } else {
+    // Handle any non-POST methods (e.g., GET)
+    res.status(405).json({ error: "Method Not Allowed" });
+  }
+};
